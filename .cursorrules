@@ -1,0 +1,47 @@
+Aqui está o conjunto definitivo, completo e exaustivo de Regras de Ouro de Segurança, Arquitetura e Engenharia. Este documento foi estruturado para ser a diretriz primária absoluta que a AntiGravity e qualquer agente de IA devem verificar e cumprir rigorosamente antes de escrever, refatorar ou executar qualquer linha de código no seu monólito modular (front e api).
+
+🛡️ O MANUAL DEFINITIVO DE SEGURANÇA E ARQUITETURA — FAZENDA MORRO GRANDE
+1. Isolamento Absoluto de Camadas e Acesso a Dados
+1.1. Regra do Fluxo Obrigatório (Front -> API -> DB): O front-end em React (front) tem proibição absoluta de importar ou utilizar o cliente do Supabase para operações diretas de escrita (INSERT, UPDATE, DELETE) ou leitura sensível nas tabelas de negócio. Toda e qualquer interação com o banco de dados deve transitar obrigatoriamente pelos endpoints da API NestJS (api).
+
+1.2. Banco Cego para o Cliente Externo: O Supabase atua exclusivamente como data store backend da API. As chaves de acesso público do cliente (anon_key) no front-end jamais devem ser usadas para bypassar a API.
+
+1.3. Zero Lógica no Banco de Dados: É estritamente proibido criar regras de negócio, validações de fluxo ou automações críticas (como triggers de criação de usuários/perfis) dentro do PostgreSQL. Toda e qualquer regra de negócio reside exclusivamente no código da API NestJS.
+
+2. Autenticação, Identidade e Sincronização
+2.1. Provisionamento Via API (Auth Sync): A criação de registros na tabela relacional public.users após o registro no auth.users do Supabase não ocorre por triggers do banco. Ela deve ser codificada de forma explícita e atômica dentro de um serviço dedicado na API NestJS (ex: fluxo de registro/login tratado pelo backend).
+
+2.2. Sessão por Bearer Token: As rotas protegidas da API exigem obrigatoriamente a validação do token JWT do usuário enviado no header Authorization: Bearer <token>.
+
+2.3. Separação Estrita de Tipos de ID (Chaves Primárias vs. UUIDs):
+
+O ecossistema interno utiliza IDs numéricos sequenciais (BIGINT GENERATED ALWAYS AS IDENTITY) em absolutamente todas as chaves primárias e estrangeiras das tabelas de negócio (roles, user_roles, clients, establishments, etc.).
+
+A única exceção permitida é na tabela public.users, que possui uma coluna própria chamada id (numérica, PK) e obrigatoriamente uma coluna chamada user_uuid (UUID, FK estrita apontando para auth.users(id)). Nenhuma query de negócio pode misturar esses tipos sem conversão ou mapeamento explícito.
+
+3. Validação de Entradas e Blindagem de Payloads
+3.1. Validação Obrigatória com DTOs: Nenhum controller da API pode aceitar objetos crus (req.body). É mandatório o uso de classes DTO validadas com class-validator e class-transformers em 100% dos endpoints de escrita (POST, PATCH, PUT).
+
+3.2. Sanitização Contra Injeções: Uso estrito de parâmetros tipados e ORM/Query Builder seguro para prevenir qualquer tentativa de Injeção de SQL ou XSS na camada de transporte.
+
+3.3. Rejeição de Propriedades Desconhecidas: Os DTOs e Pipes do NestJS devem estar configurados com forbidNonWhitelisted: true e whitelist: true para barrar campos injetados maliciosamente que não façam parte do contrato esperado.
+
+4. Proteção de Infraestrutura, Rede e Tráfego
+4.1. Controle Rígido de CORS: O arquivo main.ts da API NestJS deve configurar o CORS explicitamente para aceitar requisições apenas oriundas do domínio oficial do front-end (homologação local ou produção na Vercel). O uso de origin: '*' em produção é proibido.
+
+4.2. Rate Limiting (Proteção Anti-DDoS/Brute Force): É obrigatória a implementação do ThrottlerModule do NestJS (nestjs-throttler) em rotas críticas da API (como autenticação, criação de contas e operações sensíveis) para mitigar ataques de força bruta.
+
+4.3. Gestão Isolada de Segredos (.env vs Vercel):
+
+Nenhuma credencial, chave de serviço ou segredo pode constar no código-fonte (hardcoded).
+
+O ambiente de homologação local lê estritamente o arquivo api/.env (obrigatoriamente listado no .gitignore).
+
+O ambiente de produção utiliza exclusivamente as Environment Variables injetadas com segurança pelo painel de controle da Vercel.
+
+5. Tratamento de Erros, Logs e Resiliência
+5.1. Filtros Globais de Exceção: A API deve implementar um Exception Filter global para interceptar quaisquer erros não tratados, garantindo que pilhas de execução (stack traces), mensagens cruas do PostgreSQL ou detalhes internos do servidor nunca sejam vazados para o cliente na resposta HTTP.
+
+5.2. Padronização de Erros: Todas as respostas de erro da API devem seguir um contrato previsível e limpo (ex: { statusCode, message, error, timestamp }).
+
+5.3. Imutabilidade de Código Crítico: Elementos estruturais e abas já validadas e aprovadas no sistema (como Geral, Time, Planos e as rotas estruturais base) jamais devem ser apagadas ou ter trechos de código corretos removidos por atualizações automatizadas.
